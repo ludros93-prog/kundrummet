@@ -1,0 +1,131 @@
+diff --git a/public/index.html b/public/index.html
+index 148736a..485bce0 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -40,7 +40,7 @@
+ <p class="muted meeting-disclaimer">Avtalsvalet dokumenterar samtalet. Inget avtal tecknas här.</p></div>
+ <div class="closing-aside"><div id="meetingStories"></div></div></div>
+ <div class="sheet handoff-card"><div class="handoff-heading"><div><p class="eyebrow">UNDERLAG ATT TA MED</p><h2>Hela mötet i en PDF</h2><p class="muted">Era behov, föreslaget upplägg, jämförelse, nästa steg och två kundröster.</p></div><button class="primary" id="saveSummary">Skapa PDF</button></div>
+-<p id="summaryStatus" class="export-status" role="status" hidden></p><div id="pdfActions" hidden><h3>Din PDF är klar</h3><p class="muted">Avtalsförklaringen följer med automatiskt. Öppna PDF visar filen i samma fönster. När du kommer tillbaka öppnar Kundrummet samma steg igen.</p><div class="actions"><a id="summaryDownload" class="text-button" download="Kundunderlag.pdf">Hämta PDF ↓</a><a id="summaryOpen" class="text-button" target="_self">Öppna PDF</a><button id="summaryShare" class="primary" type="button" hidden>Dela/spara</button></div><details class="download-help"><summary>Hjälp att spara på mobilen</summary><p class="muted">På iPhone: välj Dela/spara → Spara i Filer. Om knappen saknas kan du öppna PDF:en och använda PDF-visarens delningsknapp. Om du använder en inbyggd webbläsare och inget händer, öppna kundrummet i Safari.</p></details></div></div>
++<p id="summaryStatus" class="export-status" role="status" hidden></p><div id="pdfActions" hidden><h3>Din PDF är klar</h3><p class="muted">Avtalsförklaringen följer med automatiskt. Om du lämnar sidan öppnar Kundrummet samma steg igen när du kommer tillbaka.</p><div class="actions"><a id="summaryDownload" class="text-button" download="Kundunderlag.pdf">Hämta PDF ↓</a><a id="summaryOpen" class="text-button" target="_self">Öppna PDF</a><button id="summaryShare" class="primary" type="button" hidden>Dela/spara</button></div><details class="download-help"><summary>Hjälp att spara på mobilen</summary><p class="muted">På iPhone: välj Dela/spara → Spara i Filer. Om knappen saknas kan du öppna PDF:en och använda PDF-visarens delningsknapp. Om du använder en inbyggd webbläsare och inget händer, öppna kundrummet i Safari.</p></details></div></div>
+ <div class="actions step-actions"><button class="secondary" data-back="3">← Till jämförelsen</button><span class="closing-hint">Kunden kan läsa PDF:en utan inloggning.</span></div></section>
+ <p id="saveNote" class="save-note" role="status">Mötesutkastet sparas i den här webbläsaren. Prisbanken delas med teamet.</p>
+ <footer><span>Kraftringen · Kundrummet</span><a href="/stories.html">Kundröster</a><a href="https://kundrum-radgivning.rosen123.chatgpt.site/" target="_blank" rel="noopener">Rådgivarrummet ↗</a><button id="newMeeting" class="text-button">Nytt kundmöte</button></footer></main><script type="module" src="/meeting-flow.mjs"></script></body></html>
+diff --git a/public/meeting-delivery.mjs b/public/meeting-delivery.mjs
+index 02029d7..0851ab7 100644
+--- a/public/meeting-delivery.mjs
++++ b/public/meeting-delivery.mjs
+@@ -2,6 +2,9 @@
+ // prepare() may also run without a click (e.g. when the meeting is restored after leaving the page):
+ // creating the file needs no user activation, only opening/sharing it does.
+ export const isIOS=(platform=globalThis)=>{const n=platform.navigator||{};return /iPhone|iPad|iPod/.test(n.userAgent||'')||(n.platform==='MacIntel'&&n.maxTouchPoints>1);};
++// On a computer the PDF opens in a new tab so the meeting stays open. Phones, tablets and home-screen apps keep the same
++// window: there a blob address may not be reachable from a new window, and v28 moved away from new tabs for that reason.
++export const opensNewTab=(platform=globalThis)=>{try{const n=platform.navigator||{},mm=q=>platform.matchMedia?.(q)?.matches===true;return mm('(pointer: fine)')&&mm('(hover: hover)')&&!mm('(display-mode: standalone)')&&n.standalone!==true&&!isIOS(platform)&&!/Android/.test(n.userAgent||'');}catch{return false;}};
+ export function bindPdfDelivery({button,status,actions,download,open,share,getMeeting,generate,platform=globalThis,onReady=()=>{},onInvalidate=()=>{}}){
+  let readyFile=null,url=null,generation=0;
+  const say=(message,error=false)=>{status.hidden=false;status.classList.toggle('error',error);status.textContent=message;};
+@@ -23,10 +26,11 @@ export function bindPdfDelivery({button,status,actions,download,open,share,getMe
+    if(url)platform.URL.revokeObjectURL(url);
+    url=nextUrl;readyFile=file;
+    download.href=url;download.download=result.filename;open.href=url;
++   const newTab=opensNewTab(platform);open.target=newTab?'_blank':'_self';if(newTab)open.rel='noopener';else if(open.removeAttribute)open.removeAttribute('rel');open.textContent=newTab?'Öppna PDF ↗':'Öppna PDF';
+    let canShare=false;
+    try{canShare=typeof platform.navigator.share==='function'&&platform.navigator.canShare?.({files:[file]})===true;}catch{}
+    share.hidden=!canShare;actions.hidden=false;
+-   const how=canShare?(isIOS(platform)?' Välj Dela/spara och sedan Spara i Filer, eller Hämta PDF.':' Välj Dela/spara, Hämta PDF eller Öppna PDF.'):' Välj Hämta PDF eller Öppna PDF nedan.';
++   const how=canShare?(isIOS(platform)?' Välj Dela/spara och sedan Spara i Filer, eller Hämta PDF.':' Välj Dela/spara, Hämta PDF eller Öppna PDF.'):(newTab?' Välj Hämta PDF, eller Öppna PDF för att se den i en ny flik.':' Välj Hämta PDF eller Öppna PDF nedan.');
+    say(`PDF klar: ${result.pageCount} sidor.${how}${result.replacedCharacters.length?' Vissa specialtecken har ersatts med frågetecken; kontrollera texten före delning.':''}`);
+    onReady(snapshot);
+    (canShare?share:download).focus({preventScroll:true});
+diff --git a/public/meeting-flow.css b/public/meeting-flow.css
+index 81173df..611bf65 100644
+--- a/public/meeting-flow.css
++++ b/public/meeting-flow.css
+@@ -7,7 +7,7 @@
+ @media(max-width:700px){.chart-header{align-items:flex-start;flex-direction:column;gap:8px}.chart-header .segments{width:100%}.chart-header .segments button{flex:1}.chart-legend{gap:12px;font-size:11px}.month-metrics{grid-template-columns:1fr;gap:18px}.month-metrics>div{padding-bottom:16px;border-bottom:1px solid #dae3e7}.month-metrics>div:last-child{padding-bottom:0;border:0}.month-metrics strong{font-size:23px}.month-focus{padding:20px 18px}.benefits{grid-template-columns:1fr;gap:22px}.benefits article{border-right:0;border-bottom:1px solid var(--line);padding:0 0 22px}.benefits article:last-child{padding-bottom:0}.benefits p{font-size:13px}.benefit-number{margin-bottom:10px}.conversation-prompt p{font-size:16px}.focus-select{max-width:none}.mode-toggle{font-size:12px;align-items:flex-start}.mode-toggle input{margin-top:0}.tradeoff{padding:16px}.chart-sheet .eyebrow{margin-bottom:10px}}
+ 
+ .meeting-story-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:24px 0}.meeting-story{border:1px solid #dce5e9;border-radius:18px;overflow:hidden;min-width:0}.meeting-story>img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover}.meeting-story-copy{padding:20px}.meeting-story h3{margin:8px 0 12px}.meeting-story p{font-size:14px;line-height:1.7}.meeting-story .story-sector{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:700}.story-reason{padding:12px 0;border-top:1px solid #e6ecef}.story-reason strong{display:block}.meeting-story a{display:inline-block;font-size:14px;font-weight:600;padding:10px 0;color:#013c57}.story-draft{padding:16px 18px;background:#fff7e4;border-left:3px solid #fbc34e;font-size:13px;line-height:1.7}.meeting-stories select{max-width:100%}.export-status{margin-top:12px;font-size:14px;line-height:1.6}.export-status.error{color:#a42e29}@media(max-width:700px){.meeting-story-grid{grid-template-columns:1fr}.meeting-story-copy{padding:18px}}
+-#pdfActions .actions{justify-content:flex-start;margin:18px 0;gap:12px}#pdfActions .actions a{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:12px 22px;border:1px solid var(--ink);border-radius:14px;text-decoration:none;font-size:14px;font-weight:600}#summaryDownload{background:var(--ink);color:#fff}#summaryOpen{background:#fff;color:var(--ink)}#pdfActions .actions button{min-height:48px}#pdfActions #summaryShare{order:-1}@media(max-width:700px){#pdfActions .actions a{flex:1;min-width:130px}#pdfActions #summaryShare{width:100%}}#deliveryDiagnostics dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;margin:8px 0}#deliveryDiagnostics dt{font-weight:600}#deliveryDiagnostics dd{margin:0;overflow-wrap:anywhere}
++#pdfActions .actions{justify-content:flex-start;margin:18px 0;gap:12px}#pdfActions .actions a{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:12px 22px;border:1px solid var(--ink);border-radius:14px;text-decoration:none;font-size:14px;font-weight:600}#summaryDownload{background:var(--ink);color:#fff}#summaryOpen{background:#fff;color:var(--ink)}#pdfActions .actions button{min-height:48px}@media(max-width:700px){#pdfActions .actions a{flex:1;min-width:130px}#pdfActions #summaryShare{order:-1;width:100%}}#deliveryDiagnostics dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;margin:8px 0}#deliveryDiagnostics dt{font-weight:600}#deliveryDiagnostics dd{margin:0;overflow-wrap:anywhere}
+ /* Four deliberate meeting stages. Keep the comparison customer-facing. */
+ .steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;background:#e8eef1;border-radius:18px;padding:6px;margin-bottom:36px}.steps button{display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 10px;border-radius:13px;font-size:12px;font-weight:600;min-width:0}.steps button span{display:inline;width:auto;height:auto;border-radius:0;background:none;margin:0}.steps button .step-number{display:inline-grid;place-items:center;width:28px;height:28px;flex-shrink:0;border-radius:50%;background:#d7e1e6;font-size:12px}.steps .step-short{display:none}.steps [aria-current] .step-number{background:var(--yellow);color:var(--ink)}.steps [aria-current] .step-label,.steps [aria-current] .step-short{background:transparent;color:#fff}.steps .step-past:not([aria-current]) .step-number{background:#d1e5e8;color:#005b70}.step-actions{padding-top:14px;align-items:center}.step-actions .primary{min-width:230px}.basis-short{font-size:12px;color:var(--muted);margin:18px 0 4px}.basis{margin:0 0 18px;padding:12px 0;border-top:0;font-size:12px}.basis summary{font-size:12px;min-height:24px}.basis p{margin:10px 0}.calculation-details>summary{font-size:16px;min-height:28px}.calculation-details>h2{margin-top:24px}.chart-extra h3{display:none}.chart-hint{margin-bottom:0}.chart-sheet details{margin-top:12px;padding:14px 0}.benefit-sheet .conversation-prompt{background:#f0f5f7;color:var(--ink);padding:18px 22px}.benefit-sheet .conversation-prompt span{color:#526572}.save-note{margin:30px 0 0;font-size:10px}.closing-overview{background:var(--ink);color:#fff;border-radius:22px;padding:28px 32px;border-top:4px solid var(--yellow);display:grid;grid-template-columns:1fr 1.55fr;gap:18px 32px}.closing-overview .eyebrow{color:#a7c9d6;margin:0 0 10px;font-size:9px}.closing-customer h2{font-size:25px;overflow-wrap:anywhere;margin:0 0 8px;line-height:1.3}.closing-customer>p:last-child{font-size:12px;color:#c3d9e3;margin:0}.closing-facts{display:grid;grid-template-columns:1fr 1fr;gap:24px;border-left:1px solid #ffffff35;padding-left:28px}.closing-facts span,.closing-facts small{display:block;color:#c3d9e3;font-size:11px}.closing-facts strong{display:block;font-size:20px;font-weight:600;line-height:1.4;margin:7px 0;overflow-wrap:anywhere}.overview-note{grid-column:1/-1;border-top:1px solid #ffffff25;padding-top:14px;margin:0;font-size:10px;color:#c3d9e3}.closing-grid{display:grid;grid-template-columns:1.08fr 1fr;gap:24px;margin-top:24px;align-items:start}.closing-grid .sheet{margin:0;padding:26px}.closing-grid .eyebrow,.handoff-card .eyebrow{margin:0 0 10px}.meeting-notes>label{margin-top:22px}.meeting-notes>label:first-of-type{margin-top:0}.optional{font-size:11px;font-weight:400;color:var(--muted);display:inline}.meeting-notes textarea{min-height:120px}.meeting-disclaimer{border-top:1px solid var(--line);margin:22px 0 0;padding-top:16px;font-size:11px}.stories-heading{display:flex;align-items:flex-start;gap:12px}.stories-heading h2{font-size:18px;line-height:1.5;margin-bottom:8px}.count-tag{margin-left:auto;background:#edf3f5;border-radius:50%;min-width:28px;height:28px;display:grid;place-items:center;font-size:12px}.story-list{margin:12px 0}.story-row{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid var(--line);text-decoration:none}.story-row:last-child{border-bottom:0}.story-row img{width:80px;height:60px;object-fit:cover;border-radius:9px;flex-shrink:0}.story-row>span:not(.story-arrow){min-width:0}.story-row small{display:block;font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px}.story-row strong{font-size:14px;line-height:1.5;font-weight:600;display:block;overflow-wrap:anywhere}.story-arrow{margin-left:auto;flex-shrink:0;color:#007a9d}.story-row:hover strong{text-decoration:underline}.draft-caption{font-size:10px;line-height:1.65;color:var(--muted);margin:10px 0 0}.compact-stories details{margin-top:16px;padding:16px 0 0}.compact-stories summary{font-size:12px}.compact-stories select{max-width:100%;font-size:14px}.handoff-card{border:1px solid #d5e2e9;border-left:4px solid var(--yellow);margin-top:24px}.handoff-heading{display:flex;justify-content:space-between;align-items:center;gap:24px}.handoff-heading h2{margin-bottom:6px}.handoff-heading p:last-child{margin:0}.handoff-heading>.primary{min-width:180px;flex-shrink:0}.handoff-card #pdfActions{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}.handoff-card #pdfActions h3{font-size:16px;margin:0}.handoff-card .download-help{margin-top:6px;padding-bottom:0}.download-help summary{font-size:12px}.closing-hint{font-size:11px;color:var(--muted)}
+ @media(max-width:700px){.steps{gap:4px;padding:5px;margin-bottom:28px;border-radius:16px}.steps button{flex-direction:column;gap:6px;padding:10px 2px;font-size:10px;line-height:1.3;border-radius:12px;min-width:0}.steps .step-label{display:none}.steps .step-short{display:inline}.steps button .step-number{width:26px;height:26px;font-size:11px}.step-actions{gap:12px}.step-actions .primary{min-width:160px}.step-actions button{font-size:12px;padding:12px 14px}.closing-overview{padding:24px 20px;grid-template-columns:1fr;gap:20px}.closing-customer h2{font-size:24px}.closing-facts{border-left:0;border-top:1px solid #ffffff35;padding:18px 0 0;gap:18px}.closing-facts strong{font-size:17px}.closing-facts small{font-size:10px}.closing-facts span{font-size:10px}.overview-note{font-size:9px;line-height:1.7}.closing-grid{grid-template-columns:1fr;gap:20px;margin-top:20px}.closing-grid .sheet{padding:22px 20px}.meeting-notes textarea{min-height:110px}.story-row img{width:72px;height:54px}.handoff-heading{flex-direction:column;align-items:stretch;gap:20px}.handoff-heading>.primary{width:100%;min-width:0}.handoff-card{padding:24px 20px}.closing-hint{font-size:10px}.benefit-sheet .conversation-prompt p{font-size:14px}.calculation-details>summary{font-size:14px}}
+diff --git a/test-desktop-browser.mjs b/test-desktop-browser.mjs
+new file mode 100644
+index 0000000..3ea5dec
+--- /dev/null
++++ b/test-desktop-browser.mjs
+@@ -0,0 +1,35 @@
++// Browser test of the PDF flow on a computer. Not part of the Node unit tests.
++// Run against a local server or preview of public/: BASE=http://127.0.0.1:8766 node test-desktop-browser.mjs
++// Uses full Chromium (channel 'chromium') at 1440x900 with mouse. Safari and Firefox on a computer are NOT covered; see the checklist in the report.
++import assert from 'node:assert/strict';
++import {chromium} from 'playwright';
++const BASE=process.env.BASE||'http://127.0.0.1:8766';
++// Full Chromium is needed: the headless shell has no PDF viewer and downloads the PDF instead of showing it.
++const browser=await chromium.launch({channel:process.env.CHANNEL||'chromium'});
++const ctx=await browser.newContext({viewport:{width:1440,height:900},acceptDownloads:true}),page=await ctx.newPage(),errors=[];
++page.on('pageerror',e=>errors.push(String(e)));page.on('dialog',d=>d.accept());
++const step=()=>page.evaluate(()=>[1,2,3,4].find(i=>!document.getElementById('step'+i).hidden));
++await page.goto(BASE+'/');
++await page.evaluate(()=>{const el=id=>document.getElementById(id),click=s=>document.querySelector(s).dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})),input=(id,v,t='input')=>{el(id).value=v;el(id).dispatchEvent(new Event(t,{bubbles:true}));};
++ input('customer','Testkund AB');input('annual','200000');click('#applyAnnual');click('[data-step="2"]');click('[data-contract="individual"]');click('[data-period="both"]');click('#showComparison');click('#showClosing');input('next','Offert på fredag.');});
++await page.click('#saveSummary');await page.waitForSelector('#pdfActions:not([hidden])',{timeout:60000});
++// 1. Hämta PDF gives the real file name.
++const [dl]=await Promise.all([page.waitForEvent('download'),page.click('#summaryDownload')]);
++assert.match(dl.suggestedFilename(),/^Kundunderlag-Testkund-AB-both\.pdf$/);
++// 2. Öppna PDF opens a new tab with the PDF; the meeting stays on step 4 with the PDF ready.
++assert.equal(await page.$eval('#summaryOpen',a=>a.target),'_blank');
++const [tab]=await Promise.all([ctx.waitForEvent('page'),page.click('#summaryOpen')]);
++await tab.waitForLoadState().catch(()=>{});
++assert(tab.url().startsWith('blob:'),'new tab shows the blob PDF: '+tab.url());
++await tab.close();
++assert.equal(await step(),4);assert(!(await page.$eval('#pdfActions',e=>e.hidden)));
++// 3. Reload keeps step 4 and prepares the PDF again.
++await page.reload();await page.waitForSelector('#pdfActions:not([hidden])',{timeout:60000});assert.equal(await step(),4);
++// 4. Deep dive and back with the browser's Back button lands on step 3.
++await page.evaluate(()=>document.querySelector('[data-back="3"]').dispatchEvent(new MouseEvent('click',{bubbles:true})));
++await page.evaluate(()=>{document.querySelector('details.deeper').open=true;});
++await Promise.all([page.waitForURL(/details\.html/),page.click('#openDetails')]);
++await page.goBack();await page.waitForTimeout(800);assert.equal(await step(),3);
++assert.deepEqual(errors,[]);
++console.log('PASS (Chromium, computer): correct download name, PDF in new tab with meeting kept, reload keeps step 4, back from deep dive lands on step 3.');
++await browser.close();
+diff --git a/test-meeting-delivery.mjs b/test-meeting-delivery.mjs
+index 163f9ab..d533abe 100644
+--- a/test-meeting-delivery.mjs
++++ b/test-meeting-delivery.mjs
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict';
+-import {bindPdfDelivery} from './public/meeting-delivery.mjs';
++import {bindPdfDelivery,opensNewTab} from './public/meeting-delivery.mjs';
+ function element(){return {hidden:true,disabled:false,textContent:'',handlers:{},classList:{toggle(){}},addEventListener(k,fn){this.handlers[k]=fn;},focus(){},scrollIntoView(){},click(){throw Error('Synthetic clicks must not start file delivery');}};}
+ let state={customer:'Test'},calls=0,shareError=null,resolveGeneration;
+ const ui=Object.fromEntries(['button','status','actions','download','open','share'].map(k=>[k,element()]));
+@@ -42,3 +42,25 @@ console.log('PASS: explicit file links, synchronous native sharing, cancellation
+  assert(!ui3.actions.hidden);assert(!/iPhone/.test(ui3.status.textContent),'no iPhone instruction on Android');
+  console.log('PASS: prepare without click, released blob URLs, ready/invalidate callbacks, iOS and Android copy, share error name.');
+ }
++// Added for computers: the PDF opens in a new tab only on a computer browser, never on phones, tablets or home-screen apps.
++{
++ const media=on=>({matchMedia:q=>({matches:on.includes(q)})});
++ const desktop=['(pointer: fine)','(hover: hover)'];
++ const mac={userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',platform:'MacIntel',maxTouchPoints:0};
++ assert.equal(opensNewTab({...media(desktop),navigator:mac}),true,'Mac Safari');
++ assert.equal(opensNewTab({...media(desktop),navigator:{userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36 Edg/130'}}),true,'Windows Edge');
++ assert.equal(opensNewTab({...media([...desktop,'(display-mode: standalone)']),navigator:mac}),false,'installed app window');
++ assert.equal(opensNewTab({...media(desktop),navigator:{...mac,maxTouchPoints:5}}),false,'iPad with trackpad');
++ assert.equal(opensNewTab({...media(desktop),navigator:{userAgent:'Mozilla/5.0 (Linux; Android 14) Chrome/130'}}),false,'Android');
++ assert.equal(opensNewTab({...media(['(pointer: coarse)']),navigator:{userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)'}}),false,'iPhone');
++ assert.equal(opensNewTab({navigator:mac}),false,'no matchMedia');
++ const ui4=Object.fromEntries(['button','status','actions','download','open','share'].map(k=>[k,element()]));
++ bindPdfDelivery({...ui4,getMeeting:()=>state,generate:async()=>result,platform:{File,URL,navigator:mac,...media(desktop)}});
++ await ui4.button.handlers.click();
++ assert.equal(ui4.open.target,'_blank');assert.equal(ui4.open.rel,'noopener');assert.equal(ui4.open.textContent,'Öppna PDF ↗');assert.match(ui4.status.textContent,/ny flik/);
++ const ui5=Object.fromEntries(['button','status','actions','download','open','share'].map(k=>[k,element()]));
++ bindPdfDelivery({...ui5,getMeeting:()=>state,generate:async()=>result,platform:{File,URL,navigator:{userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)'},...media(['(pointer: coarse)'])}});
++ await ui5.button.handlers.click();
++ assert.equal(ui5.open.target,'_self');assert.equal(ui5.open.textContent,'Öppna PDF');
++ console.log('PASS: new tab on computers only (Mac, Windows), same window on iPhone, iPad, Android and installed app.');
++}
